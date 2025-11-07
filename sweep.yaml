@@ -1,0 +1,43 @@
+program: example.py
+method: bayes
+metric:
+  name: train_loss
+  goal: minimize
+run_cap: 30
+
+parameters:
+  samples_per_epoch:
+    value: 100000
+  lr:
+    distribution: log_uniform_values
+    min: 0.000001
+    max: 0.001
+  kernel_lr:
+    distribution: log_uniform_values
+    min: 0.000001
+    max: 0.01
+  weight_decay:
+    values: [0.01]
+  d_model:
+    value: 128
+  n_layers:
+    value: 8
+  context_length:
+    value: 1440
+  batch_size:
+    value: 128
+  epochs:
+    value: 2
+  prenorm:
+    value: true
+  enable_checkpoint:
+    value: 0
+  data_dir:
+    value: ""
+
+command:
+  - python
+  - example_deepar.py
+  - "--resume"
+  - ${args}
+
