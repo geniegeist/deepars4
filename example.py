@@ -15,7 +15,7 @@ from deepars4.deepars4 import DeepARS4, NegativeBinomialNLL
 from deepars4.common import DummyWandb
 from deepars4.loss_eval import evaluate_model
 from deepars4.split import temporal_train_val_split, spatiotemporal_subset
-from deepars4.optimizer import setup_optimizer
+from deepars4.optimizer import setup_optimizer, setup_warum_up_optimizer
 from deepars4.train_util import plot_forecast_vs_truth
 from deepars4.dataset import TileTimeSeriesDataset
 
@@ -195,7 +195,7 @@ if args.resume:
 
 
 criterion = NegativeBinomialNLL()
-optimizer, scheduler = setup_optimizer(
+optimizer, scheduler = setup_warum_up_optimizer(
     model, lr=args.lr, weight_decay=args.weight_decay, epochs=args.epochs, eta_min=args.eta_min
 )
 
@@ -255,6 +255,8 @@ for epoch in range(args.start_epoch, args.epochs + 1):
     train_loader = get_train_loader()
     pbar = tqdm(enumerate(train_loader))
     print("Train loader setup finished")
+    print(f"Epoch {epoch} learning rate: {scheduler.get_last_lr()}")
+    wandb_run.log({ "last_lr": scheduler.get_last_lr(), "epoch": epoch })
     for batch_idx, data in pbar:
         samples_so_far += args.batch_size
 
@@ -312,7 +314,5 @@ for epoch in range(args.start_epoch, args.epochs + 1):
     # Logging
     if args.use_scheduler:
         scheduler.step()
-    print(f"Epoch {epoch} learning rate: {scheduler.get_last_lr()}")
-    wandb_run.log({ "last_lr": scheduler.get_last_lr(), "epoch": epoch })
 
 wandb_run.finish()
