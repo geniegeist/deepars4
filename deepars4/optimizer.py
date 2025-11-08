@@ -3,7 +3,7 @@ import torch
 import torch.optim as optim
 
 
-def setup_optimizer(model, lr, weight_decay, epochs, eta_min):
+def setup_optimizer(model, lr, weight_decay, epochs, eta_min, warm_restart=None):
     """
     S4 requires a specific optimizer setup.
 
@@ -33,7 +33,10 @@ def setup_optimizer(model, lr, weight_decay, epochs, eta_min):
             {"params": params, **hp}
         )
 
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, epochs, eta_min=eta_min)
+    if warm_restart is None:
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, epochs, eta_min=eta_min)
+    else:
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=warm_restart, eta_min=eta_min)
 
     # Print optimizer info
     keys = sorted(set([k for hp in hps for k in hp.keys()]))

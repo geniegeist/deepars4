@@ -36,6 +36,7 @@ parser.add_argument('--lr', type=float, default=0.01, help='Learning rate for no
 parser.add_argument('--s4_lr', type=float, default=0.001, help='Learning rate for S4 layers')
 parser.add_argument('--weight_decay', type=float, default=0.01, help='Weight decay for optimizer (Adam)')
 parser.add_argument('--use_scheduler', action='store_true', help='Enable learning rate scheduler')
+parser.add_argument('--warm_restart', type=int, help='Enable learning rate scheduler')
 parser.add_argument('--eta_min', type=float, default=0, help='Minimum learning rate for cosine annealing scheduler')
 
 # ----------------------------------------------------------------------
@@ -195,8 +196,8 @@ if args.resume:
 
 
 criterion = NegativeBinomialNLL()
-optimizer, scheduler = setup_warum_up_optimizer(
-    model, lr=args.lr, weight_decay=args.weight_decay, epochs=args.epochs, eta_min=args.eta_min
+optimizer, scheduler = setup_optimizer(
+    model, lr=args.lr, weight_decay=args.weight_decay, epochs=args.epochs, eta_min=args.eta_min, warm_restart=args.warm_restart
 )
 
 ###############################################################################
@@ -307,7 +308,7 @@ for epoch in range(args.start_epoch, args.epochs + 1):
         torch.save(state, ckpt_path)
 
         if not use_dummy_wandb:
-            artifact = wandb.Artifact(f'{wandb_run.id}__artifact:epoch{epoch}', type='model')
+            artifact = wandb.Artifact(f'{wandb_run.id}-artifact-epoch{epoch}', type='model')
             artifact.add_file(ckpt_path)
             wandb_run.log_artifact(artifact)
 
