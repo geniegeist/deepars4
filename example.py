@@ -241,7 +241,7 @@ for epoch in range(args.start_epoch, args.epochs + 1):
         })
 
     # once in a while: sample from model
-    if last_epoch or (epoch % sample_every == 0):
+    if sample_every > 0 and (last_epoch or (epoch % sample_every == 0)):
         plot_forecast_vs_truth(
             model=model,
             loader=sample_loader,
