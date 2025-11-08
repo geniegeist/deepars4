@@ -11,12 +11,12 @@ import yaml
 import os
 import argparse
 
-from deepars4.deepars4 import DeepARS4, NegativeBinomialNLL
+from deepars4.deepars4 import DeepARS4_RMSE, RMSELoss
 from deepars4.common import DummyWandb
-from deepars4.loss_eval import evaluate_model
+from deepars4.loss_eval import evaluate_model_rmse
 from deepars4.split import temporal_train_val_split, spatiotemporal_subset
-from deepars4.optimizer import setup_optimizer, setup_warum_up_optimizer
-from deepars4.train_util import plot_forecast_vs_truth
+from deepars4.optimizer import setup_optimizer 
+from deepars4.train_util import plot_forecast_vs_truth_rmse
 from deepars4.dataset import TileTimeSeriesDataset
 
 
@@ -121,7 +121,7 @@ prenorm = args.use_prenorm if args.use_prenorm else config["model"]["prenorm"]
 # wandb logging init
 use_dummy_wandb = args.run == "dummy"
 wandb_run = DummyWandb() if use_dummy_wandb else wandb.init(
-    project="deepars4", 
+    project="deepars4_rmse", 
     name=args.run, 
     resume_from=args.wandb_resume_from if args.wandb_resume_from else None,
     config={ 
@@ -175,7 +175,7 @@ sample_loader = DataLoader(
 print('==> Building model..')
 
 d_input = len(meta["features"])
-model = DeepARS4(
+model = DeepARS4_RMSE(
     d_input=d_input,
     d_model=d_model,
     n_layers=n_layers,
@@ -195,7 +195,7 @@ if args.resume:
     model.load_state_dict(checkpoint['model'])
 
 
-criterion = NegativeBinomialNLL()
+criterion = RMSELoss()
 optimizer, scheduler = setup_optimizer(
     model, lr=args.lr, weight_decay=args.weight_decay, epochs=args.epochs, eta_min=args.eta_min, warm_restart=args.warm_restart
 )
@@ -222,7 +222,7 @@ for epoch in range(args.start_epoch, args.epochs + 1):
     model.eval()
     # once in a while: evaluate model
     if last_epoch or epoch % eval_every == 0:
-        val_res = evaluate_model(
+        val_res = evaluate_model_rmse(
             model=model,
             criterion=criterion,
             loader=mini_val_loader,
@@ -236,14 +236,13 @@ for epoch in range(args.start_epoch, args.epochs + 1):
             "epoch": epoch,
             "samples_so_far": samples_so_far,
             "val_loss": val_res["loss"],
-            "val_mae": val_res["mae"],
             "min_val_loss": min_eval_loss,
             "best_epoch": best_epoch,
         })
 
     # once in a while: sample from model
     if sample_every > 0 and (last_epoch or (epoch % sample_every == 0)):
-        plot_forecast_vs_truth(
+        plot_forecast_vs_truth_rmse(
             model=model,
             loader=sample_loader,
             device=device,
@@ -265,22 +264,16 @@ for epoch in range(args.start_epoch, args.epochs + 1):
         obs, targets = obs.to(device), targets.to(device)
         optimizer.zero_grad()
         preds = model(obs)
-        mu, alpha = preds
         loss = criterion(preds, targets)
         loss.backward()
         optimizer.step()
 
-        mae = torch.mean(torch.abs(mu - targets))
-
         smooth_train_loss = ema_beta * smooth_train_loss + (1 - ema_beta) * loss.item() # EMA the training loss
         debiased_smooth_loss = smooth_train_loss / (1 - ema_beta**(batch_idx + 1))
 
-        smooth_mae = ema_beta * smooth_mae + (1 - ema_beta) * mae.item() # EMA the training loss
-        debiased_smooth_mae = smooth_mae / (1 - ema_beta**(batch_idx + 1))
-
         pbar.set_description(
-            'Train Batch Idx: (%d/%d) | Train loss: %.6f | MAE: %.6f' %
-            (batch_idx, len(train_loader), debiased_smooth_loss, debiased_smooth_mae)
+            'Train Batch Idx: (%d/%d) | Train loss: %.6f' %
+            (batch_idx, len(train_loader), debiased_smooth_loss )
         )
         
         if batch_idx % 10 == 0:
@@ -289,7 +282,6 @@ for epoch in range(args.start_epoch, args.epochs + 1):
                 "batch_idx": batch_idx,
                 "samples_so_far": samples_so_far,
                 "train_loss": debiased_smooth_loss,
-                "train_mae": debiased_smooth_mae,
                 "last_lr": scheduler.get_last_lr(),
             })
 

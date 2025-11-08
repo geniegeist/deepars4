@@ -131,10 +131,106 @@ class NegativeBinomialNLL(nn.Module):
     def __init__(self):
         super().__init__()
 
-    def forward(self, mu, alpha, targets):
+    def forward(self, preds, targets):
+        mu, alpha = preds 
         return (
             -NegativeBinomial(
                 total_count=1.0 / alpha, 
                 probs= 1.0 - 1.0 / (1.0 + alpha*mu)
             ).log_prob(targets).mean()
         )
+
+
+class DeepARS4_RMSE(nn.Module):
+    """
+    Adapted version of DeepAR-S4 for deterministic point forecasting.
+    Outputs a single value (mean prediction) per timestep and is trained using RMSE.
+    """
+
+    def __init__(
+        self,
+        d_input: int,
+        d_model: int = 256,
+        n_layers: int = 4,
+        dropout: float = 0.2,
+        prenorm: bool = False,
+        output_scale: bool = True,
+        lr: float = 0.001,
+        **layer_args,
+    ):
+        super().__init__()
+
+        self.prenorm = prenorm
+        self.output_scale_flag = output_scale
+
+        # Encoder
+        self.encoder = nn.Linear(d_input, d_model)
+
+        # S4 residual stack
+        self.s4_layers = nn.ModuleList()
+        self.norms = nn.ModuleList()
+        self.dropouts = nn.ModuleList()
+        for _ in range(n_layers):
+            self.s4_layers.append(
+                S4(
+                    d_model=d_model,
+                    bidirectional=False,
+                    l_max=3000,
+                    final_act="glu",
+                    dropout=dropout,
+                    transposed=False,
+                    lr=lr,
+                    **layer_args,
+                )
+            )
+            self.norms.append(nn.LayerNorm(d_model))
+            self.dropouts.append(dropout_fn(dropout))
+
+        if output_scale:
+            self.output_scale = nn.Linear(d_model, d_model)
+
+        # Final output head for point prediction
+        self.decoder = nn.Linear(d_model, 1)
+
+    def forward(self, x):
+        """
+        x: (batch, seq_len, d_input)
+        returns: point predictions (batch, seq_len, 1)
+        """
+        x = self.encoder(x)
+
+        for layer, norm, dropout in zip(self.s4_layers, self.norms, self.dropouts):
+            residual = x
+            if self.prenorm:
+                x = norm(x)
+            x, _ = layer(x)
+            x = dropout(x)
+            x = residual + x
+            if not self.prenorm:
+                x = norm(x)
+
+        if self.output_scale_flag:
+            x = self.output_scale(x)
+
+        # Direct mean prediction
+        y_hat = self.decoder(x)
+        return y_hat  # (B, L, 1)
+
+    def predict(self, x, last_only=False):
+        """Make point predictions without sampling"""
+        self.eval()
+        with torch.no_grad():
+            y_hat = self.forward(x)
+            if last_only:
+                return y_hat[:, -1]  # (B, 1)
+            return y_hat  # (B, L, 1)
+
+
+class RMSELoss(nn.Module):
+    """Root Mean Square Error Loss"""
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, preds, targets):
+        return torch.sqrt(torch.mean((preds[:,-1] - targets[:,-1]) ** 2))
+
