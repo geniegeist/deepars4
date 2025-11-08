@@ -36,7 +36,7 @@ parser.add_argument('--lr', type=float, default=0.01, help='Learning rate for no
 parser.add_argument('--s4_lr', type=float, default=0.001, help='Learning rate for S4 layers')
 parser.add_argument('--weight_decay', type=float, default=0.01, help='Weight decay for optimizer (Adam)')
 parser.add_argument('--use_scheduler', action='store_true', help='Enable learning rate scheduler')
-parser.add_argument('--eta_min', type=float, default=1e-5, help='Minimum learning rate for cosine annealing scheduler')
+parser.add_argument('--eta_min', type=float, default=0, help='Minimum learning rate for cosine annealing scheduler')
 
 # ----------------------------------------------------------------------
 # Dataset
@@ -71,6 +71,8 @@ parser.add_argument('--val_split_date', type=str, default='2025-01-01', help='Va
 parser.add_argument('--resume', action='store_true', help='Resume training from checkpoint')
 parser.add_argument('--checkpoint_path', type=str, default='./checkpoints/ckpt.pth', help='Path to checkpoint file')
 parser.add_argument('--run', default="dummy", type=str, help='Run name for logging (e.g., wandb)')
+parser.add_argument('--wandb_resume_from', type=str, help='{run_id}?_step={step}')
+parser.add_argument('--start_epoch', type=int, default=0, help='Epoch to start with')
 parser.add_argument('--save_checkpoints', action='store_true', help='Enable periodic checkpoint saving')
 
 # ----------------------------------------------------------------------
@@ -120,6 +122,7 @@ use_dummy_wandb = args.run == "dummy"
 wandb_run = DummyWandb() if use_dummy_wandb else wandb.init(
     project="deepars4", 
     name=args.run, 
+    resume_from=args.wandb_resume_from if args.wandb_resume_from else None,
     config={ 
         "data": {"meta": meta}, 
         "args": args, 
@@ -153,6 +156,7 @@ sample_dataset = TileTimeSeriesDataset(sample_df, meta, context_length=context_l
 
 # Dataloaders
 def get_train_loader():
+    print("Setting up train loader")
     # Randomly select N unique indices
     indices = torch.randperm(len(train_dataset))[:samples_per_epoch]
     train_sampler = SubsetRandomSampler(indices)
@@ -206,8 +210,9 @@ best_epoch = -1
 
 print('==> Start training..')
 
+wandb_run.watch(model, log="all")
 # we run +1 iteration to save and eval at the end
-for epoch in range(args.epochs + 1):
+for epoch in range(args.start_epoch, args.epochs + 1):
     last_epoch = epoch == args.epochs
     samples_so_far = epoch * samples_per_epoch
     smooth_train_loss = 0 # EMA of training loss
@@ -249,6 +254,7 @@ for epoch in range(args.epochs + 1):
     model.train()
     train_loader = get_train_loader()
     pbar = tqdm(enumerate(train_loader))
+    print("Train loader setup finished")
     for batch_idx, data in pbar:
         samples_so_far += args.batch_size
 
@@ -273,13 +279,15 @@ for epoch in range(args.epochs + 1):
             (batch_idx, len(train_loader), debiased_smooth_loss, debiased_smooth_mae)
         )
         
-        wandb_run.log({
-            "epoch": epoch,
-            "batch_idx": batch_idx,
-            "samples_so_far": samples_so_far,
-            "train_loss": debiased_smooth_loss,
-            "train_mae": debiased_smooth_mae,
-        })
+        if batch_idx % 10 == 0:
+            wandb_run.log({
+                "epoch": epoch,
+                "batch_idx": batch_idx,
+                "samples_so_far": samples_so_far,
+                "train_loss": debiased_smooth_loss,
+                "train_mae": debiased_smooth_mae,
+                "last_lr": scheduler.get_last_lr(),
+            })
 
     if args.save_checkpoints:
         print("Save checkpoint")
@@ -297,7 +305,7 @@ for epoch in range(args.epochs + 1):
         torch.save(state, ckpt_path)
 
         if not use_dummy_wandb:
-            artifact = wandb.Artifact(f'model-weights-epoch{epoch}', type='model')
+            artifact = wandb.Artifact(f'{wandb_run.id}__artifact:epoch{epoch}', type='model')
             artifact.add_file(ckpt_path)
             wandb_run.log_artifact(artifact)
 
