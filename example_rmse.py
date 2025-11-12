@@ -236,6 +236,9 @@ for epoch in range(args.start_epoch, args.epochs + 1):
             "epoch": epoch,
             "samples_so_far": samples_so_far,
             "val_loss": val_res["loss"],
+            "val_mae": val_res["mae"],
+            "val_zero_mae": val_res["zero_mae"],
+            "val_pos_mae": val_res["pos_mae"],
             "min_val_loss": min_eval_loss,
             "best_epoch": best_epoch,
         })
@@ -268,20 +271,26 @@ for epoch in range(args.start_epoch, args.epochs + 1):
         loss.backward()
         optimizer.step()
 
+        mae = torch.mean(torch.abs(preds[:,-1] - targets[:,-1]))
+
         smooth_train_loss = ema_beta * smooth_train_loss + (1 - ema_beta) * loss.item() # EMA the training loss
         debiased_smooth_loss = smooth_train_loss / (1 - ema_beta**(batch_idx + 1))
 
+        smooth_mae = ema_beta * smooth_mae + (1 - ema_beta) * mae.item() # EMA the training loss
+        debiased_smooth_mae = smooth_mae / (1 - ema_beta**(batch_idx + 1))
+
         pbar.set_description(
-            'Train Batch Idx: (%d/%d) | Train loss: %.6f' %
-            (batch_idx, len(train_loader), debiased_smooth_loss )
+            'Train Batch Idx: (%d/%d) | Train loss: %.6f | MAE: %.6f' %
+            (batch_idx, len(train_loader), debiased_smooth_loss, debiased_smooth_mae)
         )
-        
+
         if batch_idx % 10 == 0:
             wandb_run.log({
                 "epoch": epoch,
                 "batch_idx": batch_idx,
                 "samples_so_far": samples_so_far,
                 "train_loss": debiased_smooth_loss,
+                "train_mae": debiased_smooth_mae,
                 "last_lr": scheduler.get_last_lr(),
             })
 
