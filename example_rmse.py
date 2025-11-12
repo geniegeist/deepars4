@@ -54,7 +54,8 @@ parser.add_argument('--num_workers', type=int, default=4, help='Number of DataLo
 # Model
 # ----------------------------------------------------------------------
 parser.add_argument('--n_layers', type=int, default=4, help='Number of model layers')
-parser.add_argument('--d_model', type=int, default=128, help='Hidden dimension of the model')
+parser.add_argument('--d_model', type=int, default=128, help='Number of parallel S4 channels')
+parser.add_argument('--d_state', type=int, default=64, help='Hidden state dimension')
 parser.add_argument('--dropout', type=float, default=0.1, help='Dropout probability')
 parser.add_argument('--use_prenorm', action='store_true', help='Enable pre-layer normalization')
 
@@ -114,6 +115,7 @@ eval_every = args.eval_every if args.eval_every else config["eval_every"]
 sample_every = args.sample_every if args.sample_every else config["sample_every"]
 
 d_model = args.d_model if args.d_model else config["model"]["d_model"]
+d_state = args.d_state
 n_layers = args.n_layers if args.n_layers else config["model"]["n_layers"]
 dropout = args.dropout if args.dropout else config["model"]["dropout"]
 prenorm = args.use_prenorm if args.use_prenorm else config["model"]["prenorm"]
@@ -127,7 +129,7 @@ wandb_run = DummyWandb() if use_dummy_wandb else wandb.init(
     config={ 
         "data": {"meta": meta}, 
         "args": args, 
-        "model": { "d_model": d_model, "n_layers": n_layers, "dropout": dropout, "prenorm": prenorm, "context_length": context_length },
+        "model": { "d_model": d_model, "d_state": d_state, "n_layers": n_layers, "dropout": dropout, "prenorm": prenorm, "context_length": context_length },
         "training": {
             "lr": args.lr,
             "s4_lr": args.s4_lr,
@@ -181,7 +183,8 @@ model = DeepARS4_RMSE(
     n_layers=n_layers,
     dropout=dropout,
     prenorm=prenorm,
-    lr=args.s4_lr
+    lr=args.s4_lr,
+    d_state=d_state,
 )
 
 model = model.to(device)

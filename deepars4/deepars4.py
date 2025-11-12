@@ -151,6 +151,7 @@ class DeepARS4_RMSE(nn.Module):
         self,
         d_input: int,
         d_model: int = 256,
+        d_state: int = 64,
         n_layers: int = 4,
         dropout: float = 0.2,
         prenorm: bool = False,
@@ -180,6 +181,7 @@ class DeepARS4_RMSE(nn.Module):
                     dropout=dropout,
                     transposed=False,
                     lr=lr,
+                    d_state=64,
                     **layer_args,
                 )
             )
